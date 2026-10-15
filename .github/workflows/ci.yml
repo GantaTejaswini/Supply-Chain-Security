@@ -1,3 +1,4 @@
+
 name: Supply-Chain Security CI
 
 on:
@@ -33,6 +34,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+
+      - name: Run Bandit Python security analysis
+        run: bandit -r scripts -ll
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.8.2
