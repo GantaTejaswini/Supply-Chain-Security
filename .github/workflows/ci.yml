@@ -44,11 +44,6 @@ jobs:
             | sudo sh -s -- -b /usr/local/bin v1.54.1
           syft version
 
-      - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.3
-        with:
-          version: v0.75.0
-
       - name: Create demo artifact
         run: python scripts/create_artifact.py
 
@@ -130,6 +125,9 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           format: table
+
+      - name: Verify Trivy CLI is available
+        run: trivy --version
 
       - name: Scan project SBOM
         run: |
