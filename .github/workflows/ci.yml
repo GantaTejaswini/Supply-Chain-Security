@@ -1,3 +1,4 @@
+
 name: Supply-Chain Security CI
 
 on:
@@ -37,6 +38,12 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.8.2
 
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sudo sh -s -- -b /usr/local/bin v1.54.1
+          syft version
+
       - name: Create demo artifact
         run: python scripts/create_artifact.py
 
@@ -65,6 +72,48 @@ jobs:
           print("Created tampered artifact for negative testing.")
           PY
 
+      - name: Generate project SBOM
+        run: |
+          syft dir:. \
+            --exclude '**/.git/**' \
+            --exclude '**/.venv/**' \
+            --exclude '**/artifacts/**' \
+            --exclude '**/reports/**' \
+            -o cyclonedx-json=artifacts/sbom-project.cyclonedx.json
+
+      - name: Validate project SBOM
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("artifacts/sbom-project.cyclonedx.json")
+
+          if not path.is_file():
+              raise SystemExit("FAIL: SBOM file was not generated.")
+
+          try:
+              data = json.loads(path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as error:
+              raise SystemExit(f"FAIL: SBOM is not valid JSON: {error}")
+
+          if data.get("bomFormat") != "CycloneDX":
+              raise SystemExit("FAIL: SBOM format is not CycloneDX.")
+
+          if not isinstance(data.get("components"), list):
+              raise SystemExit("FAIL: SBOM components must be a list.")
+
+          if not data["components"]:
+              raise SystemExit(
+                  "FAIL: SBOM contains no components; review dependency detection."
+              )
+
+          print("PASS: SBOM JSON is valid.")
+          print(f"SBOM format: {data['bomFormat']}")
+          print(f"SBOM specification version: {data.get('specVersion', 'unknown')}")
+          print(f"Components detected: {len(data['components'])}")
+          PY
+
       - name: Generate temporary CI signing key
         run: |
           rm -f cosign.key cosign.pub
@@ -88,3 +137,12 @@ jobs:
 
       - name: Verify release gate
         run: python scripts/release_gate.py
+
+      - name: Upload SBOM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-security-sbom
+          path: artifacts/sbom-project.cyclonedx.json
+          if-no-files-found: error
+          retention-days: 30
