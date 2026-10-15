@@ -1,3 +1,75 @@
+```yaml
+name: Supply-Chain Security CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build Artifacts and Run Security Tests
+    runs-on: ubuntu-latest
+
+    env:
+      COSIGN_PASSWORD: ci-ephemeral-test-password
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.2
+
+      - name: Create demo artifact
+        run: python scripts/create_artifact.py
+
+      - name: Prepare artifact verification fixtures
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          artifact = Path("artifacts/demo-package.zip")
+          if not artifact.is_file():
+              raise SystemExit("Demo artifact was not created.")
+
+          Path("reports").mkdir(parents=True, exist_ok=True)
+
+          digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+          Path("reports/artifact-sha256.txt").write_text(
+              digest + "\n", encoding="utf-8"
+          )
+
+          tampered = Path("artifacts/demo-package-tampered.zip")
+          tampered.write_bytes(artifact.read_bytes() + b"\nTAMPERED")
+
+          print(f"Created artifact SHA-256: {digest}")
+          print("Created tampered artifact for negative testing.")
+          PY
+
+      - name: Generate temporary CI signing key
+        run: |
+          rm -f cosign.key cosign.pub
+          cosign generate-key-pair
+
       - name: Sign demo artifact
         run: |
           cosign sign-blob \
@@ -5,3 +77,15 @@
             --key cosign.key \
             --bundle artifacts/demo-package.zip.bundle.json \
             artifacts/demo-package.zip
+
+      - name: Provide cross-platform Cosign command
+        run: |
+          sudo ln -sf "$(command -v cosign)" \
+            /usr/local/bin/cosign-windows-amd64
+
+      - name: Run automated tests
+        run: python -m pytest -v
+
+      - name: Verify release gate
+        run: python scripts/release_gate.py
+```
