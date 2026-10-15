@@ -1,4 +1,3 @@
-
 name: Supply-Chain Security CI
 
 on:
@@ -55,7 +54,7 @@ jobs:
 
           digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
           Path("reports/artifact-sha256.txt").write_text(
-              f"Expected SHA-256: {digest}\n",
+              f"SHA-256: {digest}\n",
               encoding="utf-8",
           )
 
