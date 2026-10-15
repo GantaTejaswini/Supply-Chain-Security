@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 
 jobs:
   test:
@@ -216,6 +218,12 @@ jobs:
             --bundle artifacts/demo-package.zip.bundle.json \
             artifacts/demo-package.zip
 
+      - name: Attest demo artifact provenance
+        uses: actions/attest@v2
+        with:
+          subject-path: artifacts/demo-package.zip
+          push-to-registry: false
+
       - name: Provide cross-platform Cosign command
         run: |
           sudo ln -sf "$(command -v cosign)" \
@@ -239,4 +247,3 @@ jobs:
             requirements-ci.txt
           if-no-files-found: warn
           retention-days: 30
-
