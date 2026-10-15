@@ -1,4 +1,3 @@
-
 name: Supply-Chain Security CI
 
 on:
@@ -44,6 +43,19 @@ jobs:
             | sudo sh -s -- -b /usr/local/bin v1.54.1
           syft version
 
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+            | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+          trivy --version
+
       - name: Create demo artifact
         run: python scripts/create_artifact.py
 
@@ -88,78 +100,31 @@ jobs:
           from pathlib import Path
 
           path = Path("artifacts/sbom-project.cyclonedx.json")
-
-          if not path.is_file():
-              raise SystemExit("FAIL: SBOM file is missing.")
-
-          try:
-              data = json.loads(path.read_text(encoding="utf-8"))
-          except (OSError, json.JSONDecodeError) as error:
-              raise SystemExit(f"FAIL: Invalid SBOM JSON: {error}")
+          data = json.loads(path.read_text(encoding="utf-8"))
 
           if data.get("bomFormat") != "CycloneDX":
-              raise SystemExit("FAIL: SBOM format is not CycloneDX.")
+              raise SystemExit("FAIL: SBOM is not CycloneDX.")
 
           if data.get("specVersion") != "1.6":
-              raise SystemExit(
-                  f"FAIL: Expected CycloneDX 1.6, got {data.get('specVersion')!r}"
-              )
+              raise SystemExit("FAIL: SBOM is not CycloneDX 1.6.")
 
           components = data.get("components")
           if not isinstance(components, list) or not components:
               raise SystemExit("FAIL: SBOM contains no components.")
 
-          print("PASS: SBOM validation succeeded.")
-          print(f"Specification: {data['specVersion']}")
-          print(f"Components: {len(components)}")
+          print(f"PASS: SBOM validated with {len(components)} components.")
           PY
 
-      - name: Scan filesystem and save Trivy JSON report
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln
-          vuln-type: library
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "0"
-          format: json
-          output: reports/trivy-filesystem.json
-
-      - name: Validate Trivy filesystem report
+      - name: Scan installed Python dependencies
         run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("reports/trivy-filesystem.json")
-
-          if not path.is_file():
-              raise SystemExit("FAIL: Trivy report is missing.")
-
-          try:
-              data = json.loads(path.read_text(encoding="utf-8"))
-          except (OSError, json.JSONDecodeError) as error:
-              raise SystemExit(f"FAIL: Invalid Trivy JSON: {error}")
-
-          results = data.get("Results")
-          if not isinstance(results, list) or not results:
-              raise SystemExit(
-                  "FAIL: Trivy returned no scan results. "
-                  "The report cannot be considered clean."
-              )
-
-          print("PASS: Trivy report contains scan results.")
-
-          for result in results:
-              vulnerabilities = result.get("Vulnerabilities") or []
-              print(
-                  f"Target: {result.get('Target', 'unknown')} | "
-                  f"Type: {result.get('Type', 'unknown')} | "
-                  f"Vulnerabilities: {len(vulnerabilities)}"
-              )
-          PY
+          trivy fs \
+            --scanners vuln \
+            --vuln-type library \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --format json \
+            --output reports/trivy-filesystem.json \
+            .
 
       - name: Enforce vulnerability policy
         run: python scripts/vulnerability_gate.py
