@@ -1,4 +1,4 @@
-```yaml
+
 name: Supply-Chain Security CI
 
 on:
@@ -88,4 +88,3 @@ jobs:
 
       - name: Verify release gate
         run: python scripts/release_gate.py
-```
