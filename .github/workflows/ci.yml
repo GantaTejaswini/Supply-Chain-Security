@@ -14,6 +14,7 @@ permissions:
   contents: read
   id-token: write
   attestations: write
+  artifact-metadata: write
 
 jobs:
   test:
@@ -219,10 +220,10 @@ jobs:
             artifacts/demo-package.zip
 
       - name: Attest demo artifact provenance
-        uses: actions/attest@v2
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@v4
         with:
           subject-path: artifacts/demo-package.zip
-          push-to-registry: false
 
       - name: Provide cross-platform Cosign command
         run: |
