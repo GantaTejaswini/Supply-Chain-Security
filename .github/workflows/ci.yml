@@ -136,6 +136,8 @@ jobs:
 
       - name: Scan project SBOM
         run: |
+          set -euo pipefail
+
           trivy sbom \
             --scanners vuln \
             --severity HIGH,CRITICAL \
@@ -144,6 +146,33 @@ jobs:
             --format json \
             --output reports/trivy-project-sbom.json \
             artifacts/sbom-project.cyclonedx.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("reports/trivy-project-sbom.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+
+          print("Trivy report keys:", list(data.keys()))
+          results = data.get("Results")
+
+          if not isinstance(results, list) or not results:
+              raise SystemExit(
+                  "FAIL: Trivy produced no result sections. "
+                  "Inspect SBOM compatibility and component detection."
+              )
+
+          for result in results:
+              print(
+                  "Target:", result.get("Target"),
+                  "| Type:", result.get("Type"),
+                  "| Vulnerabilities:",
+                  len(result.get("Vulnerabilities") or []),
+              )
+
+          print("PASS: Trivy report contains result sections.")
+          PY
 
       - name: Enforce SBOM vulnerability policy
         run: python scripts/vulnerability_gate.py
