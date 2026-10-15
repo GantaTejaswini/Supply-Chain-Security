@@ -11,14 +11,17 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
-  artifact-metadata: write
 
 jobs:
   test:
     name: Build Artifacts and Run Security Tests
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
 
     env:
       COSIGN_PASSWORD: ci-ephemeral-test-password
