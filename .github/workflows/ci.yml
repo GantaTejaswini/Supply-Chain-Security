@@ -62,8 +62,9 @@ jobs:
 
       - name: Install Syft
         run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sudo sh -s -- -b /usr/local/bin v1.54.1
+          set -euo pipefail
+          curl -sSfL https://get.anchore.io/syft \
+            | sudo sh -s -- -b /usr/local/bin -v v1.54.1
           syft version
 
       - name: Install Trivy
