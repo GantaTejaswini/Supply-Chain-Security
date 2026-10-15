@@ -44,6 +44,11 @@ jobs:
             | sudo sh -s -- -b /usr/local/bin v1.54.1
           syft version
 
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.3
+        with:
+          version: v0.75.0
+
       - name: Create demo artifact
         run: python scripts/create_artifact.py
 
@@ -114,7 +119,7 @@ jobs:
           print(f"Components detected: {len(data['components'])}")
           PY
 
-      - name: Scan project for vulnerabilities with Trivy
+      - name: Scan filesystem for HIGH and CRITICAL vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -125,6 +130,20 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           format: table
+
+      - name: Scan project SBOM
+        run: |
+          trivy sbom \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0 \
+            --format json \
+            --output reports/trivy-project-sbom.json \
+            artifacts/sbom-project.cyclonedx.json
+
+      - name: Enforce SBOM vulnerability policy
+        run: python scripts/vulnerability_gate.py
 
       - name: Generate temporary CI signing key
         run: |
@@ -150,11 +169,13 @@ jobs:
       - name: Verify release gate
         run: python scripts/release_gate.py
 
-      - name: Upload SBOM
-        if: success()
+      - name: Upload SBOM and scan report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: supply-chain-security-sbom
-          path: artifacts/sbom-project.cyclonedx.json
-          if-no-files-found: error
+          name: supply-chain-security-reports
+          path: |
+            artifacts/sbom-project.cyclonedx.json
+            reports/trivy-project-sbom.json
+          if-no-files-found: warn
           retention-days: 30
