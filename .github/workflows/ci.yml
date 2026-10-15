@@ -79,7 +79,7 @@ jobs:
             --exclude '**/.venv/**' \
             --exclude '**/artifacts/**' \
             --exclude '**/reports/**' \
-            -o cyclonedx-json=artifacts/sbom-project.cyclonedx.json
+            -o cyclonedx-json@1.6=artifacts/sbom-project.cyclonedx.json
 
       - name: Validate project SBOM
         run: |
@@ -100,6 +100,11 @@ jobs:
           if data.get("bomFormat") != "CycloneDX":
               raise SystemExit("FAIL: SBOM format is not CycloneDX.")
 
+          if data.get("specVersion") != "1.6":
+              raise SystemExit(
+                  f"FAIL: Expected CycloneDX 1.6, got {data.get('specVersion')!r}"
+              )
+
           if not isinstance(data.get("components"), list):
               raise SystemExit("FAIL: SBOM components must be a list.")
 
@@ -110,7 +115,7 @@ jobs:
 
           print("PASS: SBOM JSON is valid.")
           print(f"SBOM format: {data['bomFormat']}")
-          print(f"SBOM specification version: {data.get('specVersion', 'unknown')}")
+          print(f"SBOM specification version: {data['specVersion']}")
           print(f"Components detected: {len(data['components'])}")
           PY
 
