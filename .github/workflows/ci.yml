@@ -114,6 +114,18 @@ jobs:
           print(f"Components detected: {len(data['components'])}")
           PY
 
+      - name: Scan project for vulnerabilities with Trivy
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          vuln-type: library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
       - name: Generate temporary CI signing key
         run: |
           rm -f cosign.key cosign.pub
