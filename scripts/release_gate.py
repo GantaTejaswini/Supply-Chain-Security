@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -7,6 +8,12 @@ DEFAULT_ARTIFACT = ROOT / "artifacts" / "demo-package.zip"
 PUBLIC_KEY = ROOT / "cosign.pub"
 BUNDLE = ROOT / "artifacts" / "demo-package.zip.bundle.json"
 VERIFIER = ROOT / "scripts" / "verify_artifact.py"
+
+REPOSITORY = "GantaTejaswini/Supply-Chain-Security"
+SIGNER_WORKFLOW = (
+    "GantaTejaswini/Supply-Chain-Security/"
+    ".github/workflows/ci.yml"
+)
 
 
 def run_check(command: list[str], label: str) -> bool:
@@ -49,6 +56,16 @@ def main() -> int:
         print(f"BLOCKED: Signature bundle not found: {BUNDLE}")
         return 1
 
+    cosign_cli = shutil.which("cosign-windows-amd64") or shutil.which("cosign")
+    if cosign_cli is None:
+        print("BLOCKED: Cosign CLI was not found on PATH.")
+        return 1
+
+    gh_cli = shutil.which("gh")
+    if gh_cli is None:
+        print("BLOCKED: GitHub CLI ('gh') was not found on PATH.")
+        return 1
+
     integrity_ok = run_check(
         [sys.executable, str(VERIFIER), str(artifact)],
         "Artifact SHA-256 integrity verification",
@@ -56,7 +73,7 @@ def main() -> int:
 
     signature_ok = run_check(
         [
-            "cosign-windows-amd64",
+            cosign_cli,
             "verify-blob",
             "--key",
             str(PUBLIC_KEY),
@@ -67,7 +84,21 @@ def main() -> int:
         "Cosign signature verification",
     )
 
-    if not (integrity_ok and signature_ok):
+    provenance_ok = run_check(
+        [
+            gh_cli,
+            "attestation",
+            "verify",
+            str(artifact),
+            "--repo",
+            REPOSITORY,
+            "--signer-workflow",
+            SIGNER_WORKFLOW,
+        ],
+        "GitHub build-provenance verification",
+    )
+
+    if not (integrity_ok and signature_ok and provenance_ok):
         print("\nRELEASE BLOCKED: One or more security checks failed.")
         return 1
 

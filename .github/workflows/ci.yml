@@ -23,6 +23,8 @@ jobs:
 
     env:
       COSIGN_PASSWORD: ci-ephemeral-test-password
+      GH_TOKEN: ${{ github.token }}
+      SKIP_PROVENANCE_TESTS: ${{ github.event_name == 'pull_request' }}
 
     steps:
       - name: Checkout repository
@@ -234,6 +236,7 @@ jobs:
         run: python -m pytest -v
 
       - name: Verify release gate
+        if: github.event_name != 'pull_request'
         run: python scripts/release_gate.py
 
       - name: Upload SBOM and security reports

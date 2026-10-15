@@ -1,11 +1,19 @@
+
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "scripts" / "release_gate.py"
 ARTIFACT = ROOT / "artifacts" / "demo-package.zip"
 TAMPERED = ROOT / "artifacts" / "demo-package-tampered.zip"
+
+SKIP_PROVENANCE_TESTS = (
+    os.environ.get("SKIP_PROVENANCE_TESTS", "").lower() == "true"
+)
 
 
 def run_gate(*args: str) -> subprocess.CompletedProcess:
@@ -18,6 +26,10 @@ def run_gate(*args: str) -> subprocess.CompletedProcess:
     )
 
 
+@pytest.mark.skipif(
+    SKIP_PROVENANCE_TESTS,
+    reason="Pull-request builds do not generate provenance attestations.",
+)
 def test_original_artifact_is_approved():
     result = run_gate()
 
@@ -32,6 +44,9 @@ def test_tampered_artifact_is_blocked():
 
     assert result.returncode != 0
     assert "RELEASE BLOCKED" in result.stdout
+    assert (
+        "FAIL: Artifact SHA-256 integrity verification" in result.stdout
+    ), result.stdout + result.stderr
 
 
 def test_artifact_and_signature_bundle_exist():
