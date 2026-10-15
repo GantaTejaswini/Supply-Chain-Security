@@ -60,15 +60,22 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb
 
+      - name: Verify Cosign installation
+        run: |
+          set -euo pipefail
+          command -v cosign
+          cosign version
+
       - name: Install Syft
         run: |
           set -euo pipefail
           curl -sSfL https://get.anchore.io/syft \
-            | sudo sh -s -- -b /usr/local/bin -v v1.54.1
+            | sudo env "PATH=$PATH" sh -s -- -b /usr/local/bin -v v1.54.1
           syft version
 
       - name: Install Trivy
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y wget apt-transport-https gnupg
           wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
@@ -111,6 +118,7 @@ jobs:
 
       - name: Generate project SBOM
         run: |
+          set -euo pipefail
           syft dir:. \
             --exclude '**/.git/**' \
             --exclude '**/.venv/**' \
@@ -160,6 +168,7 @@ jobs:
 
       - name: Scan Python dependencies with Trivy
         run: |
+          set -euo pipefail
           mkdir -p reports
 
           trivy fs \
