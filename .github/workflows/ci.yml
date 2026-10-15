@@ -66,8 +66,9 @@ jobs:
           from pathlib import Path
 
           artifact = Path("artifacts/demo-package.zip")
+
           if not artifact.is_file():
-              raise SystemExit("Demo artifact was not created.")
+              raise SystemExit("FAIL: Demo artifact was not created.")
 
           Path("reports").mkdir(parents=True, exist_ok=True)
 
@@ -100,31 +101,85 @@ jobs:
           from pathlib import Path
 
           path = Path("artifacts/sbom-project.cyclonedx.json")
-          data = json.loads(path.read_text(encoding="utf-8"))
+
+          if not path.is_file():
+              raise SystemExit("FAIL: SBOM file is missing.")
+
+          try:
+              data = json.loads(path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as error:
+              raise SystemExit(f"FAIL: Invalid SBOM JSON: {error}")
 
           if data.get("bomFormat") != "CycloneDX":
-              raise SystemExit("FAIL: SBOM is not CycloneDX.")
+              raise SystemExit("FAIL: SBOM format is not CycloneDX.")
 
           if data.get("specVersion") != "1.6":
-              raise SystemExit("FAIL: SBOM is not CycloneDX 1.6.")
+              raise SystemExit(
+                  f"FAIL: Expected CycloneDX 1.6, got {data.get('specVersion')!r}"
+              )
 
           components = data.get("components")
           if not isinstance(components, list) or not components:
               raise SystemExit("FAIL: SBOM contains no components.")
 
-          print(f"PASS: SBOM validated with {len(components)} components.")
+          print("PASS: SBOM validation succeeded.")
+          print(f"Specification: {data['specVersion']}")
+          print(f"Components: {len(components)}")
           PY
 
-      - name: Scan installed Python dependencies
+      - name: Create pinned Python dependency inventory
         run: |
+          python -m pip freeze > requirements-ci.txt
+          echo "Python dependency inventory:"
+          cat requirements-ci.txt
+          test -s requirements-ci.txt
+
+      - name: Scan Python dependencies with Trivy
+        run: |
+          mkdir -p reports
+
           trivy fs \
             --scanners vuln \
-            --vuln-type library \
+            --file-patterns "pip:requirements-ci.txt" \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --format json \
             --output reports/trivy-filesystem.json \
             .
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("reports/trivy-filesystem.json")
+
+          if not path.is_file():
+              raise SystemExit("FAIL: Trivy report was not created.")
+
+          try:
+              report = json.loads(path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as error:
+              raise SystemExit(f"FAIL: Invalid Trivy JSON: {error}")
+
+          print("Trivy report keys:", list(report.keys()))
+
+          results = report.get("Results")
+          if not isinstance(results, list) or not results:
+              raise SystemExit(
+                  "FAIL: Trivy returned no scan results. "
+                  "Review the Trivy output and requirements-ci.txt."
+              )
+
+          for result in results:
+              print(
+                  "Target:", result.get("Target", "unknown"),
+                  "| Type:", result.get("Type", "unknown"),
+                  "| Vulnerabilities:",
+                  len(result.get("Vulnerabilities") or []),
+              )
+
+          print("PASS: Trivy produced scan result sections.")
+          PY
 
       - name: Enforce vulnerability policy
         run: python scripts/vulnerability_gate.py
@@ -162,5 +217,6 @@ jobs:
             artifacts/sbom-project.cyclonedx.json
             reports/trivy-filesystem.json
             reports/artifact-sha256.txt
+            requirements-ci.txt
           if-no-files-found: warn
           retention-days: 30
