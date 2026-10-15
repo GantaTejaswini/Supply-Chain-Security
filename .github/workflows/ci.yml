@@ -90,12 +90,12 @@ jobs:
           path = Path("artifacts/sbom-project.cyclonedx.json")
 
           if not path.is_file():
-              raise SystemExit("FAIL: SBOM file was not generated.")
+              raise SystemExit("FAIL: SBOM file is missing.")
 
           try:
               data = json.loads(path.read_text(encoding="utf-8"))
           except (OSError, json.JSONDecodeError) as error:
-              raise SystemExit(f"FAIL: SBOM is not valid JSON: {error}")
+              raise SystemExit(f"FAIL: Invalid SBOM JSON: {error}")
 
           if data.get("bomFormat") != "CycloneDX":
               raise SystemExit("FAIL: SBOM format is not CycloneDX.")
@@ -105,21 +105,16 @@ jobs:
                   f"FAIL: Expected CycloneDX 1.6, got {data.get('specVersion')!r}"
               )
 
-          if not isinstance(data.get("components"), list):
-              raise SystemExit("FAIL: SBOM components must be a list.")
+          components = data.get("components")
+          if not isinstance(components, list) or not components:
+              raise SystemExit("FAIL: SBOM contains no components.")
 
-          if not data["components"]:
-              raise SystemExit(
-                  "FAIL: SBOM contains no components; review dependency detection."
-              )
-
-          print("PASS: SBOM JSON is valid.")
-          print(f"SBOM format: {data['bomFormat']}")
-          print(f"SBOM specification version: {data['specVersion']}")
-          print(f"Components detected: {len(data['components'])}")
+          print("PASS: SBOM validation succeeded.")
+          print(f"Specification: {data['specVersion']}")
+          print(f"Components: {len(components)}")
           PY
 
-      - name: Scan filesystem for HIGH and CRITICAL vulnerabilities
+      - name: Scan filesystem and save Trivy JSON report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -128,53 +123,45 @@ jobs:
           vuln-type: library
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
-          format: table
+          exit-code: "0"
+          format: json
+          output: reports/trivy-filesystem.json
 
-      - name: Verify Trivy CLI is available
-        run: trivy --version
-
-      - name: Scan project SBOM
+      - name: Validate Trivy filesystem report
         run: |
-          set -euo pipefail
-
-          trivy sbom \
-            --scanners vuln \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --exit-code 0 \
-            --format json \
-            --output reports/trivy-project-sbom.json \
-            artifacts/sbom-project.cyclonedx.json
-
           python - <<'PY'
           import json
           from pathlib import Path
 
-          path = Path("reports/trivy-project-sbom.json")
-          data = json.loads(path.read_text(encoding="utf-8"))
+          path = Path("reports/trivy-filesystem.json")
 
-          print("Trivy report keys:", list(data.keys()))
+          if not path.is_file():
+              raise SystemExit("FAIL: Trivy report is missing.")
+
+          try:
+              data = json.loads(path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as error:
+              raise SystemExit(f"FAIL: Invalid Trivy JSON: {error}")
+
           results = data.get("Results")
-
           if not isinstance(results, list) or not results:
               raise SystemExit(
-                  "FAIL: Trivy produced no result sections. "
-                  "Inspect SBOM compatibility and component detection."
+                  "FAIL: Trivy returned no scan results. "
+                  "The report cannot be considered clean."
               )
+
+          print("PASS: Trivy report contains scan results.")
 
           for result in results:
+              vulnerabilities = result.get("Vulnerabilities") or []
               print(
-                  "Target:", result.get("Target"),
-                  "| Type:", result.get("Type"),
-                  "| Vulnerabilities:",
-                  len(result.get("Vulnerabilities") or []),
+                  f"Target: {result.get('Target', 'unknown')} | "
+                  f"Type: {result.get('Type', 'unknown')} | "
+                  f"Vulnerabilities: {len(vulnerabilities)}"
               )
-
-          print("PASS: Trivy report contains result sections.")
           PY
 
-      - name: Enforce SBOM vulnerability policy
+      - name: Enforce vulnerability policy
         run: python scripts/vulnerability_gate.py
 
       - name: Generate temporary CI signing key
@@ -201,13 +188,14 @@ jobs:
       - name: Verify release gate
         run: python scripts/release_gate.py
 
-      - name: Upload SBOM and scan report
+      - name: Upload SBOM and security reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: supply-chain-security-reports
           path: |
             artifacts/sbom-project.cyclonedx.json
-            reports/trivy-project-sbom.json
+            reports/trivy-filesystem.json
+            reports/artifact-sha256.txt
           if-no-files-found: warn
           retention-days: 30
