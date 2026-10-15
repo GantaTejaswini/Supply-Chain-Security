@@ -55,7 +55,8 @@ jobs:
 
           digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
           Path("reports/artifact-sha256.txt").write_text(
-              digest + "\n", encoding="utf-8"
+              f"Expected SHA-256: {digest}\n",
+              encoding="utf-8",
           )
 
           tampered = Path("artifacts/demo-package-tampered.zip")
