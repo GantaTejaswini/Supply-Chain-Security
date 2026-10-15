@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -55,3 +56,61 @@ def test_artifact_and_signature_bundle_exist():
     assert (
         ROOT / "artifacts" / "demo-package.zip.bundle.json"
     ).is_file()
+
+
+def test_signature_failure_blocks_release():
+    from scripts import release_gate
+
+    with (
+        patch.object(release_gate, "ROOT", ROOT),
+        patch.object(release_gate, "DEFAULT_ARTIFACT", ARTIFACT),
+        patch.object(release_gate, "PUBLIC_KEY", ROOT / "cosign.pub"),
+        patch.object(
+            release_gate,
+            "BUNDLE",
+            ROOT / "artifacts" / "demo-package.zip.bundle.json",
+        ),
+        patch.object(release_gate.shutil, "which") as mock_which,
+        patch.object(release_gate, "run_check") as mock_check,
+        patch.object(sys, "argv", [str(GATE)]),
+    ):
+        mock_which.side_effect = ["cosign", "gh"]
+        mock_check.side_effect = [True, False, True]
+
+        result = release_gate.main()
+
+    assert result == 1
+    assert [call.args[1] for call in mock_check.call_args_list] == [
+        "Artifact SHA-256 integrity verification",
+        "Cosign signature verification",
+        "GitHub build-provenance verification",
+    ]
+
+
+def test_provenance_failure_blocks_release():
+    from scripts import release_gate
+
+    with (
+        patch.object(release_gate, "ROOT", ROOT),
+        patch.object(release_gate, "DEFAULT_ARTIFACT", ARTIFACT),
+        patch.object(release_gate, "PUBLIC_KEY", ROOT / "cosign.pub"),
+        patch.object(
+            release_gate,
+            "BUNDLE",
+            ROOT / "artifacts" / "demo-package.zip.bundle.json",
+        ),
+        patch.object(release_gate.shutil, "which") as mock_which,
+        patch.object(release_gate, "run_check") as mock_check,
+        patch.object(sys, "argv", [str(GATE)]),
+    ):
+        mock_which.side_effect = ["cosign", "gh"]
+        mock_check.side_effect = [True, True, False]
+
+        result = release_gate.main()
+
+    assert result == 1
+    assert [call.args[1] for call in mock_check.call_args_list] == [
+        "Artifact SHA-256 integrity verification",
+        "Cosign signature verification",
+        "GitHub build-provenance verification",
+    ]
